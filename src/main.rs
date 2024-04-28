@@ -1,9 +1,9 @@
-mod pieces;
+mod chess;
 
 use gtk::{gdk_pixbuf, prelude::*, Picture};
 use gtk::{Application, ApplicationWindow, Button, Grid};
 use gtk::gdk;
-use pieces::Board;
+use chess::Board;
 
 const BOARD_SIZE: usize = 8;
 const SQUARE_PIXELS: usize = 60;
