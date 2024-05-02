@@ -3,8 +3,8 @@
     padding: 0;
 }
 .light-square {
-    background-color: rgb(205, 245, 255);
+    background-color: rgb(240, 240, 240);
 }
 .dark-square {
-    background-color: rgb(135, 46, 187);
+    background-color: rgb(100, 46, 187);
 }
