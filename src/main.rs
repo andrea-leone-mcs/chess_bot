@@ -1,9 +1,10 @@
 mod chess;
 
-use gtk::{gdk_pixbuf, prelude::*, Picture};
+use gtk::{gdk_pixbuf, glib, prelude::*, Picture};
 use gtk::{Application, ApplicationWindow, Button, Grid};
 use gtk::gdk;
 use chess::Board;
+use std::time::Duration;
 
 const BOARD_SIZE: usize = 8;
 const SQUARE_PIXELS: usize = 60;
@@ -57,12 +58,11 @@ fn show_board() {
                     let picture = Picture::new();
                     picture.set_pixbuf(Some(&pixbuf));
                     button.set_child(Some(&picture));
-                    
                 }
                 grid.attach(&button, col as i32, row as i32, 1, 1);
             }
         }
-        let board = Board::new();
+        let mut board = Board::new();
         board.apply_to_grid(&grid);
 
         // Add the grid to the window
@@ -70,6 +70,13 @@ fn show_board() {
 
         // Show the window
         window.show();
+
+        // Schedule updates to the UI at regular intervals
+        glib::timeout_add_local(Duration::from_secs(1).into(), move || {
+            board.play_random_move();
+            board.apply_to_grid(&grid);
+            glib::ControlFlow::Continue
+        });
     });
 
     // Run the application
@@ -77,6 +84,5 @@ fn show_board() {
 }
 
 fn main() {
-    let board = Board::new();
     show_board();
 }
