@@ -72,7 +72,7 @@ fn show_board() {
         window.show();
 
         // Schedule updates to the UI at regular intervals
-        glib::timeout_add_local(Duration::from_secs(1).into(), move || {
+        glib::timeout_add_local(Duration::from_secs(1), move || {
             board.play_random_move();
             board.apply_to_grid(&grid);
             glib::ControlFlow::Continue

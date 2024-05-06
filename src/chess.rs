@@ -279,7 +279,7 @@ impl Piece {
                     }
                     for (dr, dc) in directions {
                         let (mut r, mut c) = (self.row as i8 + dr, self.col as i8 + dc);
-                        while r >= 0 && r < 8 && c >= 0 && c < 8 {
+                        while (0..Board::ROWS as i8).contains(&r) && (0..Board::COLS as i8).contains(&c) {
                             if let Some(occupying) = &board.board[r as usize][c as usize] {
                                 if occupying.color == self.color {
                                     break;
@@ -309,7 +309,7 @@ impl Piece {
                     }
                     for (dr, dc) in directions {
                         let (mut r, mut c) = (self.row as i8 + dr, self.col as i8 + dc);
-                        while r >= 0 && r < 8 && c >= 0 && c < 8 {
+                        while (0..Board::ROWS as i8).contains(&r) && (0..Board::COLS as i8).contains(&c) {
                             if let Some(occupying) = &board.board[r as usize][c as usize] {
                                 if occupying.color == self.color {
                                     break;
@@ -339,7 +339,7 @@ impl Piece {
                     }
                     for (dr, dc) in directions {
                         let (mut r, mut c) = (self.row as i8 + dr, self.col as i8 + dc);
-                        while r >= 0 && r < 8 && c >= 0 && c < 8 {
+                        while (0..Board::ROWS as i8).contains(&r) && (0..Board::COLS as i8).contains(&c) {
                             if let Some(occupying) = &board.board[r as usize][c as usize] {
                                 if occupying.color == self.color {
                                     break;
@@ -367,7 +367,7 @@ impl Piece {
                     }
                     for (dr, dc) in directions {
                         let (mut r, mut c) = (self.row as i8 + dr, self.col as i8 + dc);
-                        while r >= 0 && r < 8 && c >= 0 && c < 8 {
+                        while (0..Board::ROWS as i8).contains(&r) && (0..Board::COLS as i8).contains(&c) {
                             if let Some(occupying) = &board.board[r as usize][c as usize] {
                                 if occupying.color == self.color {
                                     break;
@@ -487,10 +487,10 @@ impl Board {
 
         // pick castling rights
         let (wq_castle, wk_castle, bq_castle, bk_castle) = (
-            parts[2].contains("Q"),
-            parts[2].contains("K"),
-            parts[2].contains("q"),
-            parts[2].contains("k")
+            parts[2].contains('Q'),
+            parts[2].contains('K'),
+            parts[2].contains('q'),
+            parts[2].contains('k')
         );
         
         let en_passant = match parts[3] {
@@ -542,15 +542,13 @@ impl Board {
             let (mut r, mut c) = ((row as i8 + dr) as usize, (col as i8 + dc) as usize);
             let mut row_col_mask = PieceType::Queen.id() | PieceType::Rook.id() | PieceType::King.id() | color.opposite().id();
             while r < Board::ROWS && c < Board::COLS {
-                if let Some(piece) = &self.board[r as usize][c as usize] {
+                if let Some(piece) = &self.board[r][c] {
                     if piece.color == color {
                         break;
+                    } else if piece.id() & row_col_mask == piece.id() {
+                        return true;
                     } else {
-                        if piece.id() & row_col_mask == piece.id() {
-                            return true;
-                        } else {
-                            break;
-                        }
+                        break;
                     }
                 }
                 r = (r as i8 + dr) as usize;
@@ -563,15 +561,13 @@ impl Board {
             let (mut r, mut c) = ((row as i8 + dr) as usize, (col as i8 + dc) as usize);
             let mut diag_mask = PieceType::Queen.id() | PieceType::Bishop.id() | PieceType::King.id() | color.opposite().id();
             while r < Board::ROWS && c < Board::COLS {
-                if let Some(piece) = &self.board[r as usize][c as usize] {
+                if let Some(piece) = &self.board[r][c] {
                     if piece.color == color {
                         break;
+                    } else if piece.id() & diag_mask == piece.id() {
+                        return true;
                     } else {
-                        if piece.id() & diag_mask == piece.id() {
-                            return true;
-                        } else {
-                            break;
-                        }
+                        break;
                     }
                 }
                 r = (r as i8 + dr) as usize;
@@ -579,7 +575,7 @@ impl Board {
                 diag_mask &= !PieceType::King.id();
             }
         }
-        return false;
+        false
     }
 
     fn row_pin(&self, row: usize, col: usize, mask1: u8, mask2: u8) -> bool {
@@ -779,11 +775,11 @@ impl Board {
             return Err("coords_to_u8: invalid length");
         }
         let col = match coords.chars().nth(0).unwrap() {
-            'a'..='h' => coords.chars().nth(0).unwrap() as u8 - 'a' as u8,
+            'a'..='h' => coords.chars().nth(0).unwrap() as u8 - b'a',
             _ => return Err("coords_to_u8: invalid column")
         };
         let row = match coords.chars().nth(1).unwrap() {
-            '1'..='8' => coords.chars().nth(1).unwrap() as u8 - '1' as u8,
+            '1'..='8' => coords.chars().nth(1).unwrap() as u8 - b'1',
             _ => return Err("coords_to_u8: invalid row")
         };
         Ok((row, col))
@@ -799,11 +795,11 @@ impl Board {
                 }
             }
         }
-        return (9, 9);
+        (9, 9)
     }
 
     fn is_check(&self) -> bool {
-        let mut king_position = self.king_coords(&self.turn);
+        let king_position = self.king_coords(&self.turn);
         self.is_attacked(king_position.0 as usize, king_position.1 as usize, self.turn)        
     }
 
@@ -813,7 +809,7 @@ impl Board {
             for col in 0..Board::COLS {
                 if let Some(piece) = &self.board[row][col] {
                     if piece.color == self.turn {
-                        let piece_moves = piece.generate_moves(&self);
+                        let piece_moves = piece.generate_moves(self);
                         for mv in piece_moves {
                             if mv.castling {
                                 return self.play_move((row, col), &mv)
@@ -886,6 +882,6 @@ impl Board {
     }
 
     fn u8_coords_to_str(coords: (u8, u8)) -> String {
-        format!("{}{}", ('a' as u8 + coords.1) as char, ('1' as u8 + (Board::ROWS as i32-coords.0 as i32-1) as u8) as char)
+        format!("{}{}", (b'a' + coords.1) as char, (b'1' + (Board::ROWS as i32-coords.0 as i32-1) as u8) as char)
     }
 }
