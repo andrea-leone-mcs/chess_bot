@@ -2,7 +2,7 @@ use gtk::glib::object::Cast;
 use gtk::{gdk_pixbuf, Button, Grid, Picture};
 use gtk::prelude::{GridExt, ButtonExt};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PieceType {
     Pawn,
     Rook,
@@ -20,6 +20,8 @@ struct Move {
     to: (u8, u8),
     capture: bool,
     promotion: Option<PieceType>,
+    castling: bool,
+    rook_to: Option<(u8, u8)>,
 }
 
 impl Move {
@@ -28,10 +30,19 @@ impl Move {
             to,
             capture,
             promotion,
+            castling: false,
+            rook_to: None,
         }
     }
-    pub fn to(to: (u8, u8)) -> Self {
-        Self::new(to, false, None)
+    pub fn castle(king_to: (u8, u8), rook_to: (u8, u8)) -> Self {
+        Self {
+            to: king_to,
+            capture: false,
+            promotion: None,
+            castling: true,
+            rook_to: Some(rook_to),
+        }
+    
     }
 }
 
@@ -137,12 +148,17 @@ impl Piece {
         self.piece_type.id() | self.color.id()
     }
 
-    fn move_piece(&mut self, _move: Move) {
-        self.row = _move.to.0;
-        self.col = _move.to.1;
+    fn move_piece(&mut self, _move: &Move) {
+        if _move.castling && self.piece_type == PieceType::Rook {
+            self.row = _move.rook_to.unwrap().0;
+            self.col = _move.rook_to.unwrap().1;
+        } else {
+            self.row = _move.to.0;
+            self.col = _move.to.1;
+        }
     }
 
-    pub fn generate_moves(&self, board: &Board) -> Vec<Move> {
+    fn generate_moves(&self, board: &Board) -> Vec<Move> {
         let mut result = Vec::new();
         let row_pinned = board.row_pin(self.row as usize, self.col as usize, 
             PieceType::King.id() | self.color.id(),
@@ -157,14 +173,16 @@ impl Piece {
             PieceType::King.id() | self.color.id(),
             PieceType::Queen.id() | PieceType::Bishop.id() | self.color.opposite().id());
         let diag_pinned = back_diag_pinned || forward_diag_pinned;
+        //println!("row_pinned: {}, col_pinned: {}, diag_pinned: {}", row_pinned, col_pinned, diag_pinned);
+        assert!(self.color == board.turn, "generate_moves: piece color does not match turn");
         match self.piece_type {
             PieceType::Pawn => {
                 if !(row_pinned || diag_pinned) {
-                    let (delta, start_row, promotion_row): (i32, usize, usize) = match self.color {
-                        PieceColor::White => (-1, 6, 0),
-                        PieceColor::Black => (1, 1, 7),
+                    let (delta, start_row, promotion_row): (i32, u8, usize) = match self.color {
+                        PieceColor::White => (-1, 6u8, 0),
+                        PieceColor::Black => (1, 1u8, 7),
                     };
-                    let (mut r, mut c) = ((self.row as i32 + delta) as usize, self.col as usize);
+                    let (mut r, c) = ((self.row as i32 + delta) as usize, self.col as usize);
                     if board.board[r][c].is_none() {
                         if r == promotion_row {
                             result.push(Move::new((r as u8, c as u8), false, Some(PieceType::Queen)));
@@ -174,17 +192,19 @@ impl Piece {
                         } else {
                             result.push(Move::new((r as u8, c as u8), false, None));
                         }
-                    }
-                    if self.row as usize == start_row {
-                        r = (self.row as i32 + 2*delta) as usize;
-                        c = self.col as usize;
-                        if board.board[r][c].is_none() {
-                            result.push(Move::new((r as u8, c as u8), false, None));
+                        if self.row == start_row {
+                            r = (r as i32 + delta) as usize;
+                            if board.board[r][c].is_none() {
+                                result.push(Move::new((r as u8, c as u8), false, None));
+                            }
                         }
                     }
+                    // else {
+                    //     println!("There is a {:?} {:?} in {:?} {:?}", board.board[r][c].as_ref().unwrap().color, board.board[r][c].as_ref().unwrap().piece_type, r, c);
+                    // }
                     // compute captures
                     if !col_pinned {
-                        let captures = match self.color {
+                        let captures: Vec<i32> = match self.color {
                             PieceColor::White => {
                                 if back_diag_pinned {
                                     vec![-1]
@@ -207,6 +227,9 @@ impl Piece {
                         for dc in captures {
                             let r = (self.row as i32 + delta) as usize;
                             let c = (self.col as i32 + dc) as usize;
+                            if r >= Board::ROWS || c >= Board::COLS {
+                                continue;
+                            }
                             if let Some(piece) = &board.board[r][c] {
                                 if piece.color != self.color {
                                     if r == promotion_row {
@@ -376,8 +399,27 @@ impl Piece {
                         }
                     }
                 }
+                // println!("{:?} {:?} {:?} {:?}", board.wk_castle, board.wq_castle, board.bk_castle, board.bq_castle);
+                // castling
+                match self.color {
+                    PieceColor::White => {
+                        if board.wk_castle && !board.is_attacked(7, 4, self.color) && board.board[7][5].is_none() && board.board[7][6].is_none() && !board.is_attacked(7, 5, self.color) && !board.is_attacked(7, 6, self.color) {
+                            result.push(Move::castle((7, 6), (7, 5)));
+                        }
+                        if board.wq_castle && !board.is_attacked(7, 4, self.color) && board.board[7][1].is_none() && board.board[7][2].is_none() && board.board[7][3].is_none() && !board.is_attacked(7, 2, self.color) && !board.is_attacked(7, 3, self.color) {
+                            result.push(Move::castle((7, 2), (7, 3)));
+                        }
+                    },
+                    PieceColor::Black => {
+                        if board.bk_castle && !board.is_attacked(0, 4, self.color) && board.board[0][5].is_none() && board.board[0][6].is_none() && !board.is_attacked(0, 5, self.color) && !board.is_attacked(0, 6, self.color) {
+                            result.push(Move::castle((0, 6), (0, 5)));
+                        }
+                        if board.bq_castle && !board.is_attacked(0, 4, self.color) && board.board[0][1].is_none() && board.board[0][2].is_none() && board.board[0][3].is_none() && !board.is_attacked(0, 2, self.color) && !board.is_attacked(0, 3, self.color) {
+                            result.push(Move::castle((0, 2), (0, 3)));
+                        }
+                    },
+                };
             }
-            _ => {}
         }
         result
     }
@@ -497,50 +539,54 @@ impl Board {
         }
         let directions = [(1, 0), (0, 1), (-1, 0), (0, -1)];
         for (dr, dc) in directions.iter() {
-            let (mut r, mut c) = (row as i8 + dr, col as i8 + dc);
-            while r >= 0 && r < 8 && c >= 0 && c < 8 {
+            let (mut r, mut c) = ((row as i8 + dr) as usize, (col as i8 + dc) as usize);
+            let mut row_col_mask = PieceType::Queen.id() | PieceType::Rook.id() | PieceType::King.id() | color.opposite().id();
+            while r < Board::ROWS && c < Board::COLS {
                 if let Some(piece) = &self.board[r as usize][c as usize] {
-                    if piece.color == color && piece.piece_type != PieceType::King {
+                    if piece.color == color {
                         break;
                     } else {
-                        if piece.piece_type == PieceType::Queen || piece.piece_type == PieceType::Rook || piece.piece_type == PieceType::King {
+                        if piece.id() & row_col_mask == piece.id() {
                             return true;
                         } else {
                             break;
                         }
                     }
                 }
-                r += dr;
-                c += dc;
+                r = (r as i8 + dr) as usize;
+                c = (c as i8 + dc) as usize;
+                row_col_mask &= !PieceType::King.id();
             }
         }
         let directions = [(1, 1), (-1, -1), (1, -1), (-1, 1)];
         for (dr, dc) in directions.iter() {
-            let (mut r, mut c) = (row as i8 + dr, col as i8 + dc);
-            while r >= 0 && r < 8 && c >= 0 && c < 8 {
+            let (mut r, mut c) = ((row as i8 + dr) as usize, (col as i8 + dc) as usize);
+            let mut diag_mask = PieceType::Queen.id() | PieceType::Bishop.id() | PieceType::King.id() | color.opposite().id();
+            while r < Board::ROWS && c < Board::COLS {
                 if let Some(piece) = &self.board[r as usize][c as usize] {
-                    if piece.color == color && piece.piece_type != PieceType::King {
+                    if piece.color == color {
                         break;
                     } else {
-                        if piece.piece_type == PieceType::Queen || piece.piece_type == PieceType::Bishop || piece.piece_type == PieceType::King {
+                        if piece.id() & diag_mask == piece.id() {
                             return true;
                         } else {
                             break;
                         }
                     }
                 }
-                r += dr;
-                c += dc;
+                r = (r as i8 + dr) as usize;
+                c = (c as i8 + dc) as usize;
+                diag_mask &= !PieceType::King.id();
             }
         }
-        todo!()
+        return false;
     }
 
     fn row_pin(&self, row: usize, col: usize, mask1: u8, mask2: u8) -> bool {
         let (mut found1, mut found2) = (false, false);
-        let mut c = col-1;
+        let mut c = col as i32 - 1;
         while c >= 0 {
-            if let Some(piece) = &self.board[row][c] {
+            if let Some(piece) = &self.board[row][c as usize] {
                 found1 |= piece.matches(mask1);
                 found2 |= piece.matches(mask2);
                 break;
@@ -548,7 +594,7 @@ impl Board {
                 c -= 1;
             }
         }
-        c = col+1;
+        let mut c = col+1;
         while c < Board::COLS {
             if let Some(piece) = &self.board[row][c] {
                 found1 |= piece.matches(mask1);
@@ -563,9 +609,9 @@ impl Board {
 
     fn col_pin(&self, row: usize, col: usize, mask1: u8, mask2: u8) -> bool {
         let (mut found1, mut found2) = (false, false);
-        let mut r = row-1;
+        let mut r = row as i32 - 1;
         while r >= 0 {
-            if let Some(piece) = &self.board[r][col] {
+            if let Some(piece) = &self.board[r as usize][col] {
                 found1 |= piece.matches(mask1);
                 found2 |= piece.matches(mask2);
                 break;
@@ -573,7 +619,7 @@ impl Board {
                 r -= 1;
             }
         }
-        r = row+1;
+        let mut r = row+1;
         while r < Board::ROWS {
             if let Some(piece) = &self.board[r][col] {
                 found1 |= piece.matches(mask1);
@@ -588,10 +634,10 @@ impl Board {
 
     fn back_diag_pin(&self, row: usize, col: usize, mask1: u8, mask2: u8) -> bool {
         let (mut found1, mut found2) = (false, false);
-        let mut r = row-1;
-        let mut c = col-1;
+        let mut r = row as i32 - 1;
+        let mut c = col as i32 - 1;
         while r >= 0 && c >= 0 {
-            if let Some(piece) = &self.board[r][c] {
+            if let Some(piece) = &self.board[r as usize][c as usize] {
                 found1 |= piece.matches(mask1);
                 found2 |= piece.matches(mask2);
                 break;
@@ -600,8 +646,8 @@ impl Board {
                 c -= 1;
             }
         }
-        r = row+1;
-        c = col+1;
+        let mut r = row+1;
+        let mut c = col+1;
         while r < Board::ROWS && c < Board::COLS {
             if let Some(piece) = &self.board[r][c] {
                 found1 |= piece.matches(mask1);
@@ -617,10 +663,10 @@ impl Board {
 
     fn forward_diag_pin(&self, row: usize, col: usize, mask1: u8, mask2: u8) -> bool {
         let (mut found1, mut found2) = (false, false);
-        let mut r = row-1;
+        let mut r = row as i32 - 1;
         let mut c = col+1;
         while r >= 0 && c < Board::COLS {
-            if let Some(piece) = &self.board[r][c] {
+            if let Some(piece) = &self.board[r as usize][c] {
                 found1 |= piece.matches(mask1);
                 found2 |= piece.matches(mask2);
                 break;
@@ -629,10 +675,10 @@ impl Board {
                 c += 1;
             }
         }
-        r = row+1;
-        c = col-1;
+        let mut r = row+1;
+        let mut c = col as i32 - 1;
         while r < Board::ROWS && c >= 0 {
-            if let Some(piece) = &self.board[r][c] {
+            if let Some(piece) = &self.board[r][c as usize] {
                 found1 |= piece.matches(mask1);
                 found2 |= piece.matches(mask2);
                 break;
@@ -644,64 +690,64 @@ impl Board {
         found1 && found2
     }
 
-    fn same_row(&self, row: usize, mask1: u8, mask2: u8) -> bool {
-        let (mut found1, mut found2) = (false, false);
-        for col in 0..Board::COLS {
-            if let Some(piece) = &self.board[row][col] {
-                found1 |= piece.matches(mask1);
-                found2 |= piece.matches(mask2);
-            }
-        }
-        found1 && found2
-    }
+    // fn same_row(&self, row: usize, mask1: u8, mask2: u8) -> bool {
+    //     let (mut found1, mut found2) = (false, false);
+    //     for col in 0..Board::COLS {
+    //         if let Some(piece) = &self.board[row][col] {
+    //             found1 |= piece.matches(mask1);
+    //             found2 |= piece.matches(mask2);
+    //         }
+    //     }
+    //     found1 && found2
+    // }
 
-    fn same_col(&self, col: usize, mask1: u8, mask2: u8) -> bool {
-        let (mut found1, mut found2) = (false, false);
-        for row in 0..Board::ROWS {
-            if let Some(piece) = &self.board[row][col] {
-                found1 |= piece.matches(mask1);
-                found2 |= piece.matches(mask2);
-            }
-        }
-        found1 && found2
-    }
+    // fn same_col(&self, col: usize, mask1: u8, mask2: u8) -> bool {
+    //     let (mut found1, mut found2) = (false, false);
+    //     for row in 0..Board::ROWS {
+    //         if let Some(piece) = &self.board[row][col] {
+    //             found1 |= piece.matches(mask1);
+    //             found2 |= piece.matches(mask2);
+    //         }
+    //     }
+    //     found1 && found2
+    // }
 
-    fn same_diagonal(&self, row: usize, col: usize, mask1: u8, mask2: u8) -> bool {
-        let (mut found1, mut found2) = (false, false);
-        let mut pos = (row * 8 + col) % 9;
-        while pos < Board::ROWS*Board::COLS {
-            let r = (pos / 8) as usize;
-            let c = (pos % 8) as usize;
-            if r != row && c != col {
-                if let Some(piece) = &self.board[r][c] {
-                    found1 |= piece.matches(mask1);
-                    found2 |= piece.matches(mask2);
-                }
-            }
-            pos += 9;
-        }
-        if found1 && found2 {
-            return true;
-        }
-        found1 = false;
-        found2 = false;
-        pos = row * 8 + col;
-        while pos/8 != (pos-7)/8 {
-            pos -= 7;
-        }
-        while pos < Board::ROWS*Board::COLS && pos/8 != (pos+7)/8 {
-            let r = (pos / 8) as usize;
-            let c = (pos % 8) as usize;
-            if r != row && c != col {
-                if let Some(piece) = &self.board[r][c] {
-                    found1 |= piece.matches(mask1);
-                    found2 |= piece.matches(mask2);
-                }
-            }
-            pos += 7;
-        }
-        found1 && found2
-    }
+    // fn same_diagonal(&self, row: usize, col: usize, mask1: u8, mask2: u8) -> bool {
+    //     let (mut found1, mut found2) = (false, false);
+    //     let mut pos = (row * 8 + col) % 9;
+    //     while pos < Board::ROWS*Board::COLS {
+    //         let r = (pos / 8) as usize;
+    //         let c = (pos % 8) as usize;
+    //         if r != row && c != col {
+    //             if let Some(piece) = &self.board[r][c] {
+    //                 found1 |= piece.matches(mask1);
+    //                 found2 |= piece.matches(mask2);
+    //             }
+    //         }
+    //         pos += 9;
+    //     }
+    //     if found1 && found2 {
+    //         return true;
+    //     }
+    //     found1 = false;
+    //     found2 = false;
+    //     pos = row * 8 + col;
+    //     while pos/8 != (pos-7)/8 {
+    //         pos -= 7;
+    //     }
+    //     while pos < Board::ROWS*Board::COLS && pos/8 != (pos+7)/8 {
+    //         let r = (pos / 8) as usize;
+    //         let c = (pos % 8) as usize;
+    //         if r != row && c != col {
+    //             if let Some(piece) = &self.board[r][c] {
+    //                 found1 |= piece.matches(mask1);
+    //                 found2 |= piece.matches(mask2);
+    //             }
+    //         }
+    //         pos += 7;
+    //     }
+    //     found1 && found2
+    // }
 
     pub fn apply_to_grid(&self, grid: &Grid) {
         for row in 0..8 {
@@ -741,5 +787,105 @@ impl Board {
             _ => return Err("coords_to_u8: invalid row")
         };
         Ok((row, col))
+    }
+
+    fn king_coords(&self, color: &PieceColor) -> (u8, u8) {
+        for row in 0..Board::ROWS {
+            for col in 0..Board::COLS {
+                if let Some(piece) = &self.board[row][col] {
+                    if piece.piece_type == PieceType::King && piece.color == *color {
+                        return (row as u8, col as u8);
+                    }
+                }
+            }
+        }
+        return (9, 9);
+    }
+
+    fn is_check(&self) -> bool {
+        let mut king_position = self.king_coords(&self.turn);
+        self.is_attacked(king_position.0 as usize, king_position.1 as usize, self.turn)        
+    }
+
+    pub fn play_random_move(&mut self) {
+        let mut moves = Vec::new();
+        for row in 0..Board::ROWS {
+            for col in 0..Board::COLS {
+                if let Some(piece) = &self.board[row][col] {
+                    if piece.color == self.turn {
+                        let piece_moves = piece.generate_moves(&self);
+                        for mv in piece_moves {
+                            if mv.castling {
+                                return self.play_move((row, col), &mv)
+                            }
+                            moves.push((row, col, mv));
+                        }
+                    }
+                }
+            }
+        }
+        let random_idx = rand::random::<usize>() % moves.len();
+        let (row, col, mv) = moves.swap_remove(random_idx);
+        
+        self.play_move((row, col), &mv);
+        moves.clear();
+    }
+
+    fn play_move(&mut self, from: (usize, usize), mv: &Move) {
+        let mut piece = self.board[from.0][from.1].take().unwrap();
+        println!("{:?} {:?} {:?} from {:?} to {:?} capture={:?} promote={:?}", if mv.castling {"Castling"} else {"Moving"}, piece.color, piece.piece_type, Board::u8_coords_to_str((from.0 as u8, from.1 as u8)), Board::u8_coords_to_str(mv.to), mv.capture, mv.promotion);
+        
+        if mv.castling {
+            let mut rook = self.board[piece.row as usize][if mv.rook_to.unwrap().1 == 5 {7} else {0}].take().unwrap();
+            rook.move_piece(mv);
+            self.board[mv.rook_to.unwrap().0 as usize][mv.rook_to.unwrap().1 as usize] = Some(rook);
+        }
+        
+
+        if piece.piece_type == PieceType::King {
+            match piece.color {
+                PieceColor::White => {
+                    self.wk_castle = false;
+                    self.wq_castle = false;
+                },
+                PieceColor::Black => {
+                    self.bk_castle = false;
+                    self.bq_castle = false;
+                },
+            };
+        } else if piece.piece_type == PieceType::Rook {
+            match piece.color {
+                PieceColor::White => {
+                    if piece.col == 0 {
+                        self.wq_castle = false;
+                    } else if piece.col == 7 {
+                        self.wk_castle = false;
+                    }
+                },
+                PieceColor::Black => {
+                    if piece.col == 0 {
+                        self.bq_castle = false;
+                    } else if piece.col == 7 {
+                        self.bk_castle = false;
+                    }
+                },
+            };
+        }
+
+        piece.move_piece(mv);
+        self.board[mv.to.0 as usize][mv.to.1 as usize] = match mv.promotion {
+            Some(piece_type) => Some(Piece::new(piece_type, piece.color, mv.to.0, mv.to.1)),
+            None => Some(piece),
+        };
+        
+        self.halfmove_clock += 1;
+        if self.turn == PieceColor::Black {
+            self.fullmove_number += 1;
+        }
+        self.turn = self.turn.opposite();
+    }
+
+    fn u8_coords_to_str(coords: (u8, u8)) -> String {
+        format!("{}{}", ('a' as u8 + coords.1) as char, ('1' as u8 + (Board::ROWS as i32-coords.0 as i32-1) as u8) as char)
     }
 }
