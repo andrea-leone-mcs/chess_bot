@@ -16,16 +16,17 @@ enum PieceColor {
     White,
     Black,
 }
+#[derive(Debug, Clone)]
 struct Move {
     to: (u8, u8),
-    capture: bool,
+    capture: Option<Piece>,
     promotion: Option<PieceType>,
     castling: bool,
     rook_to: Option<(u8, u8)>,
 }
 
 impl Move {
-    pub fn new(to: (u8, u8), capture: bool, promotion: Option<PieceType>) -> Self {
+    pub fn new(to: (u8, u8), capture: Option<Piece>, promotion: Option<PieceType>) -> Self {
         Self {
             to,
             capture,
@@ -37,7 +38,7 @@ impl Move {
     pub fn castle(king_to: (u8, u8), rook_to: (u8, u8)) -> Self {
         Self {
             to: king_to,
-            capture: false,
+            capture: None,
             promotion: None,
             castling: true,
             rook_to: Some(rook_to),
@@ -100,7 +101,7 @@ impl PieceType {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct Piece {
     piece_type: PieceType,
     color: PieceColor,
@@ -185,17 +186,17 @@ impl Piece {
                     let (mut r, c) = ((self.row as i32 + delta) as usize, self.col as usize);
                     if board.board[r][c].is_none() {
                         if r == promotion_row {
-                            result.push(Move::new((r as u8, c as u8), false, Some(PieceType::Queen)));
-                            result.push(Move::new((r as u8, c as u8), false, Some(PieceType::Rook)));
-                            result.push(Move::new((r as u8, c as u8), false, Some(PieceType::Bishop)));
-                            result.push(Move::new((r as u8, c as u8), false, Some(PieceType::Knight)));
+                            result.push(Move::new((r as u8, c as u8), None, Some(PieceType::Queen)));
+                            result.push(Move::new((r as u8, c as u8), None, Some(PieceType::Rook)));
+                            result.push(Move::new((r as u8, c as u8), None, Some(PieceType::Bishop)));
+                            result.push(Move::new((r as u8, c as u8), None, Some(PieceType::Knight)));
                         } else {
-                            result.push(Move::new((r as u8, c as u8), false, None));
+                            result.push(Move::new((r as u8, c as u8), None, None));
                         }
                         if self.row == start_row {
                             r = (r as i32 + delta) as usize;
                             if board.board[r][c].is_none() {
-                                result.push(Move::new((r as u8, c as u8), false, None));
+                                result.push(Move::new((r as u8, c as u8), None, None));
                             }
                         }
                     }
@@ -233,16 +234,16 @@ impl Piece {
                             if let Some(piece) = &board.board[r][c] {
                                 if piece.color != self.color {
                                     if r == promotion_row {
-                                        result.push(Move::new((r as u8, c as u8), true, Some(PieceType::Queen)));
-                                        result.push(Move::new((r as u8, c as u8), true, Some(PieceType::Rook)));
-                                        result.push(Move::new((r as u8, c as u8), true, Some(PieceType::Bishop)));
-                                        result.push(Move::new((r as u8, c as u8), true, Some(PieceType::Knight)));
+                                        result.push(Move::new((r as u8, c as u8), board.board[r][c], Some(PieceType::Queen)));
+                                        result.push(Move::new((r as u8, c as u8), board.board[r][c], Some(PieceType::Rook)));
+                                        result.push(Move::new((r as u8, c as u8), board.board[r][c], Some(PieceType::Bishop)));
+                                        result.push(Move::new((r as u8, c as u8), board.board[r][c], Some(PieceType::Knight)));
                                     } else {
-                                        result.push(Move::new((r as u8, c as u8), true, None));
+                                        result.push(Move::new((r as u8, c as u8), board.board[r][c], None));
                                     }
                                 }
                             } else if (r as u8, c as u8) == board.en_passant.unwrap_or((9, 9)) {
-                                result.push(Move::new((r as u8, c as u8), true, None));
+                                result.push(Move::new((r as u8, c as u8), board.board[r][c], None));
                             }
                         }
                     }
@@ -257,10 +258,10 @@ impl Piece {
                         if r < 8 && c < 8 {
                             if let Some(occupying) = &board.board[r][c] {
                                 if occupying.color != self.color {
-                                    result.push(Move::new((r as u8, c as u8), true, None));
+                                    result.push(Move::new((r as u8, c as u8), board.board[r][c], None));
                                 }
                             } else {
-                                result.push(Move::new((r as u8, c as u8), false, None));
+                                result.push(Move::new((r as u8, c as u8), board.board[r][c], None));
                             }
                         }
                     }
@@ -284,11 +285,11 @@ impl Piece {
                                 if occupying.color == self.color {
                                     break;
                                 } else {
-                                    result.push(Move::new((r as u8, c as u8), true, None));
+                                    result.push(Move::new((r as u8, c as u8), board.board[r as usize][c as usize], None));
                                     break;
                                 }
                             } else {
-                                result.push(Move::new((r as u8, c as u8), false, None));
+                                result.push(Move::new((r as u8, c as u8), None, None));
                             }
                             r += dr;
                             c += dc;
@@ -314,11 +315,11 @@ impl Piece {
                                 if occupying.color == self.color {
                                     break;
                                 } else {
-                                    result.push(Move::new((r as u8, c as u8), true, None));
+                                    result.push(Move::new((r as u8, c as u8), board.board[r as usize][c as usize], None));
                                     break;
                                 }
                             } else {
-                                result.push(Move::new((r as u8, c as u8), false, None));
+                                result.push(Move::new((r as u8, c as u8), None, None));
                             }
                             r += dr;
                             c += dc;
@@ -344,11 +345,11 @@ impl Piece {
                                 if occupying.color == self.color {
                                     break;
                                 } else {
-                                    result.push(Move::new((r as u8, c as u8), true, None));
+                                    result.push(Move::new((r as u8, c as u8), board.board[r as usize][c as usize], None));
                                     break;
                                 }
                             } else {
-                                result.push(Move::new((r as u8, c as u8), false, None));
+                                result.push(Move::new((r as u8, c as u8), None, None));
                             }
                             r += dr;
                             c += dc;
@@ -372,11 +373,11 @@ impl Piece {
                                 if occupying.color == self.color {
                                     break;
                                 } else {
-                                    result.push(Move::new((r as u8, c as u8), true, None));
+                                    result.push(Move::new((r as u8, c as u8), board.board[r as usize][c as usize], None));
                                     break;
                                 }
                             } else {
-                                result.push(Move::new((r as u8, c as u8), false, None));
+                                result.push(Move::new((r as u8, c as u8), None, None));
                             }
                             r += dr;
                             c += dc;
@@ -389,13 +390,13 @@ impl Piece {
                 for (dr, dc) in directions.iter() {
                     let r = (self.row as i8 + dr) as usize;
                     let c = (self.col as i8 + dc) as usize;
-                    if r < 8 && c < 8 && !board.is_attacked(r, c, self.color) {
+                    if r < 8 && c < 8 && !board.is_attacked(r, c, &self.color) {
                         if let Some(occupying) = &board.board[r][c] {
                             if occupying.color != self.color {
-                                result.push(Move::new((r as u8, c as u8), true, None));
+                                result.push(Move::new((r as u8, c as u8), board.board[r][c], None));
                             }
                         } else {
-                            result.push(Move::new((r as u8, c as u8), false, None));
+                            result.push(Move::new((r as u8, c as u8), None, None));
                         }
                     }
                 }
@@ -403,18 +404,18 @@ impl Piece {
                 // castling
                 match self.color {
                     PieceColor::White => {
-                        if board.wk_castle && !board.is_attacked(7, 4, self.color) && board.board[7][5].is_none() && board.board[7][6].is_none() && !board.is_attacked(7, 5, self.color) && !board.is_attacked(7, 6, self.color) {
+                        if board.wk_castle && !board.is_attacked(7, 4, &self.color) && board.board[7][5].is_none() && board.board[7][6].is_none() && !board.is_attacked(7, 5, &self.color) && !board.is_attacked(7, 6, &self.color) {
                             result.push(Move::castle((7, 6), (7, 5)));
                         }
-                        if board.wq_castle && !board.is_attacked(7, 4, self.color) && board.board[7][1].is_none() && board.board[7][2].is_none() && board.board[7][3].is_none() && !board.is_attacked(7, 2, self.color) && !board.is_attacked(7, 3, self.color) {
+                        if board.wq_castle && !board.is_attacked(7, 4, &self.color) && board.board[7][1].is_none() && board.board[7][2].is_none() && board.board[7][3].is_none() && !board.is_attacked(7, 2, &self.color) && !board.is_attacked(7, 3, &self.color) {
                             result.push(Move::castle((7, 2), (7, 3)));
                         }
                     },
                     PieceColor::Black => {
-                        if board.bk_castle && !board.is_attacked(0, 4, self.color) && board.board[0][5].is_none() && board.board[0][6].is_none() && !board.is_attacked(0, 5, self.color) && !board.is_attacked(0, 6, self.color) {
+                        if board.bk_castle && !board.is_attacked(0, 4, &self.color) && board.board[0][5].is_none() && board.board[0][6].is_none() && !board.is_attacked(0, 5, &self.color) && !board.is_attacked(0, 6, &self.color) {
                             result.push(Move::castle((0, 6), (0, 5)));
                         }
-                        if board.bq_castle && !board.is_attacked(0, 4, self.color) && board.board[0][1].is_none() && board.board[0][2].is_none() && board.board[0][3].is_none() && !board.is_attacked(0, 2, self.color) && !board.is_attacked(0, 3, self.color) {
+                        if board.bq_castle && !board.is_attacked(0, 4, &self.color) && board.board[0][1].is_none() && board.board[0][2].is_none() && board.board[0][3].is_none() && !board.is_attacked(0, 2, &self.color) && !board.is_attacked(0, 3, &self.color) {
                             result.push(Move::castle((0, 2), (0, 3)));
                         }
                     },
@@ -440,6 +441,7 @@ pub struct Board {
     en_passant: Option<(u8, u8)>,
     halfmove_clock: u8,
     fullmove_number: u8,
+    moves: Vec<(u8, u8, Move)>
 }
 
 impl Board {
@@ -521,17 +523,18 @@ impl Board {
             en_passant,
             halfmove_clock,
             fullmove_number,
+            moves: Vec::new(),
         })
     }
 
-    fn is_attacked(&self, row: usize, col: usize, color: PieceColor) -> bool {
+    fn is_attacked(&self, row: usize, col: usize, color: &PieceColor) -> bool {
         let knight_moves = vec![(1, 2), (2, 1), (-1, 2), (-2, 1), (1, -2), (2, -1), (-1, -2), (-2, -1)];
         for (dr, dc) in knight_moves {
             let r = (row as i8 + dr) as usize;
             let c = (col as i8 + dc) as usize;
             if r < 8 && c < 8 {
                 if let Some(piece) = &self.board[r][c] {
-                    if piece.piece_type == PieceType::Knight && piece.color != color {
+                    if piece.piece_type == PieceType::Knight && piece.color != *color {
                         return true;
                     }
                 }
@@ -543,9 +546,9 @@ impl Board {
             let mut row_col_mask = PieceType::Queen.id() | PieceType::Rook.id() | PieceType::King.id() | color.opposite().id();
             while r < Board::ROWS && c < Board::COLS {
                 if let Some(piece) = &self.board[r][c] {
-                    if piece.color == color {
+                    /*if piece.color == *color {
                         break;
-                    } else if piece.id() & row_col_mask == piece.id() {
+                    } else */if piece.id() & row_col_mask == piece.id() {
                         return true;
                     } else {
                         break;
@@ -562,9 +565,9 @@ impl Board {
             let mut diag_mask = PieceType::Queen.id() | PieceType::Bishop.id() | PieceType::King.id() | color.opposite().id();
             while r < Board::ROWS && c < Board::COLS {
                 if let Some(piece) = &self.board[r][c] {
-                    if piece.color == color {
+                    /*if piece.color == *color {
                         break;
-                    } else if piece.id() & diag_mask == piece.id() {
+                    } else */if piece.id() & diag_mask == piece.id() {
                         return true;
                     } else {
                         break;
@@ -573,6 +576,21 @@ impl Board {
                 r = (r as i8 + dr) as usize;
                 c = (c as i8 + dc) as usize;
                 diag_mask &= !PieceType::King.id();
+            }
+        }
+        let directions = match color {
+            PieceColor::White => [(-1, -1), (-1, 1)],
+            PieceColor::Black => [(1, -1), (1, 1)],
+        };
+        for (dr, dc) in directions.iter() {
+            let r = (row as i8 + dr) as usize;
+            let c = (col as i8 + dc) as usize;
+            if r < 8 && c < 8 {
+                if let Some(piece) = &self.board[r][c] {
+                    if piece.piece_type == PieceType::Pawn && piece.color != *color {
+                        return true;
+                    }
+                }
             }
         }
         false
@@ -798,9 +816,9 @@ impl Board {
         (9, 9)
     }
 
-    fn is_check(&self) -> bool {
-        let king_position = self.king_coords(&self.turn);
-        self.is_attacked(king_position.0 as usize, king_position.1 as usize, self.turn)        
+    fn is_check(&self, color: &PieceColor) -> bool {
+        let king_position = self.king_coords(color);
+        self.is_attacked(king_position.0 as usize, king_position.1 as usize, color)        
     }
 
     pub fn play_random_move(&mut self) {
@@ -812,7 +830,7 @@ impl Board {
                         let piece_moves = piece.generate_moves(self);
                         for mv in piece_moves {
                             if mv.castling {
-                                return self.play_move((row, col), &mv)
+                                return self.play_move((row, col), &mv);
                             }
                             moves.push((row, col, mv));
                         }
@@ -820,14 +838,29 @@ impl Board {
                 }
             }
         }
-        let random_idx = rand::random::<usize>() % moves.len();
-        let (row, col, mv) = moves.swap_remove(random_idx);
-        
-        self.play_move((row, col), &mv);
-        moves.clear();
+        println!("{} moves available", moves.len());
+        if self.is_check(&self.turn) {
+            println!("CHECK");
+            while self.is_check(&self.turn) {
+                let random_idx = rand::random::<usize>() % moves.len();
+                let (row, col, mv) = moves.swap_remove(random_idx);
+                
+                self.play_move((row, col), &mv);
+                if self.is_check(&self.turn.opposite()) {
+                    self.rollback_move();
+                }
+            }
+        } else {
+            let random_idx = rand::random::<usize>() % moves.len();
+            let (row, col, mv) = moves.swap_remove(random_idx);
+            
+            self.play_move((row, col), &mv);
+        }
     }
 
     fn play_move(&mut self, from: (usize, usize), mv: &Move) {
+        self.moves.push((from.0 as u8, from.1 as u8, mv.clone()));
+
         let mut piece = self.board[from.0][from.1].take().unwrap();
         println!("{:?} {:?} {:?} from {:?} to {:?} capture={:?} promote={:?}", if mv.castling {"Castling"} else {"Moving"}, piece.color, piece.piece_type, Board::u8_coords_to_str((from.0 as u8, from.1 as u8)), Board::u8_coords_to_str(mv.to), mv.capture, mv.promotion);
         
@@ -879,6 +912,40 @@ impl Board {
             self.fullmove_number += 1;
         }
         self.turn = self.turn.opposite();
+    }
+
+    fn rollback_move(&mut self) {
+        self.turn = self.turn.opposite();
+        let (row, col, mv) = self.moves.pop().unwrap();
+        if mv.castling {
+            let (r_rook, c_rook) = mv.rook_to.unwrap();
+            let mut rook = self.board[r_rook as usize][c_rook as usize].take().unwrap();
+            let c_to = if c_rook == 5 {7} else {0};
+            rook.move_piece(&Move::new((r_rook, c_to), None, None));
+            self.board[r_rook as usize][c_to as usize] = Some(rook);
+            if c_to == 7 {
+                match self.turn {
+                    PieceColor::White => self.wk_castle = true,
+                    PieceColor::Black => self.bk_castle = true,
+                };
+            } else {
+                match self.turn {
+                    PieceColor::White => self.wq_castle = true,
+                    PieceColor::Black => self.bq_castle = true,
+                };
+            }
+        }
+        let mut piece = self.board[mv.to.0 as usize][mv.to.1 as usize].take().unwrap();
+        piece.move_piece(&Move::new((row, col), None, None));
+        self.board[row as usize][col as usize] = Some(piece);
+        if mv.capture.is_some() {
+            self.board[mv.to.0 as usize][mv.to.1 as usize] = mv.capture;
+        }
+
+        self.halfmove_clock -= 1;
+        if self.turn == PieceColor::Black {
+            self.fullmove_number -= 1;
+        }
     }
 
     fn u8_coords_to_str(coords: (u8, u8)) -> String {
