@@ -42,7 +42,7 @@ pub struct Board {
     bq_castle: bool,
     bk_castle: bool,
     en_passant: Option<(u8, u8)>,
-    halfmove_clock: u8,
-    fullmove_number: u8,
+    halfmove_clock: u16,
+    fullmove_number: u16,
     moves: Vec<(u8, u8, Move)>
 }

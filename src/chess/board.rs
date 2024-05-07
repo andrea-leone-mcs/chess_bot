@@ -63,12 +63,12 @@ impl Board {
             }
         };
 
-        let halfmove_clock: u8 = match parts[4].parse::<u8>() {
+        let halfmove_clock: u16 = match parts[4].parse::<u16>() {
             Ok(v) => v,
             Err(_) => return Err("from_fen: error getting halfmove clock")
         };
 
-        let fullmove_number: u8 = match parts[5].parse::<u8>() {
+        let fullmove_number: u16 = match parts[5].parse::<u16>() {
             Ok(v) => v,
             Err(_) => return Err("from_fen: error getting fullmove number")
         };
@@ -402,6 +402,9 @@ impl Board {
         if self.is_check(&self.turn) {
             println!("CHECK");
             while self.is_check(&self.turn) {
+                if moves.len() == 0 {
+                    panic!("CHECKMATE");
+                }
                 let random_idx = rand::random::<usize>() % moves.len();
                 let (row, col, mv) = moves.swap_remove(random_idx);
                 
@@ -411,6 +414,9 @@ impl Board {
                 }
             }
         } else {
+            if moves.len() == 0 {
+                panic!("STALEMATE");
+            }
             let random_idx = rand::random::<usize>() % moves.len();
             let (row, col, mv) = moves.swap_remove(random_idx);
             
