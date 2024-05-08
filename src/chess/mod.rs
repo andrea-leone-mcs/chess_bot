@@ -25,13 +25,26 @@ struct Piece {
     col: u8,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 struct Move {
     to: (u8, u8),
     capture: Option<Piece>,
     promotion: Option<PieceType>,
     castling: bool,
     rook_to: Option<(u8, u8)>,
+}
+
+struct HistoryData {
+    starting_row: u8,
+    starting_col: u8,
+    mv: Move,
+    wq_castle: bool,
+    wk_castle: bool,
+    bq_castle: bool,
+    bk_castle: bool,
+    en_passant: Option<(u8, u8)>,
+    halfmove_clock: u16,
+    fullmove_number: u16,
 }
 
 pub struct Board {
@@ -44,5 +57,19 @@ pub struct Board {
     en_passant: Option<(u8, u8)>,
     halfmove_clock: u16,
     fullmove_number: u16,
-    moves: Vec<(u8, u8, Move)>
+    history: Vec<HistoryData>,
+}
+
+#[derive(Debug)]
+pub enum DrawType {
+    ThreefoldRepetition,
+    FiftyMoveRule,
+    InsufficientMaterial,
+    Stalemate,
+}
+
+#[derive(Debug)]
+pub enum GameOutcome {
+    Checkmate(PieceColor),
+    Draw(DrawType),
 }
