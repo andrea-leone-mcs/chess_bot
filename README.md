@@ -25,11 +25,12 @@ The second phase consisted in just programming the basics of pieces and board.
 - A function which displays the board on the Grid widget was implemented. This function should be called every time the board is updated.
 
 ### Phase 3 - Movements
-The third phase of the project consisted in implementing the movements of the pieces. This was done by implementing a method for the **Piece** struct which returns a vector of possible movements for the piece. This already takes into account en-passant, castling, and the fact that pinned pieces cannot move in a way which would expose the king to a check. However, it doesn't take into account the fact that if the king is in check, the piece must move in a way such that the king won't be in check in the resulting position. This last thing has been implemented in a very _dumb_ way, by just rollbacking a move if the king is in check after the move. This is not a good solution, but it's a start.\
+The third phase of the project consisted in implementing the movements of the pieces. This was done by implementing a method for the **Piece** struct which returns a vector of possible movements for the piece. This already takes into account en-passant, castling, and the fact that pinned pieces cannot move in a way which would expose the king to a check. Also, if the king is in check, the only generated moves are those which would resolve the check by capturing the checking piece, moving the king away or interponing a piece between the checking piece and the king.
 - Some function to generate moves for the pieces have been implemented.
-- Some function that check for pinned pieces, attacks, etc. have been implemented.
+- Some function that check for pinned pieces, attacks, solving checks, etc. have been implemented.
 - A function to run a random game has been implemented.
-- Still missing: checkmate and draw conditions (not necessary at the moment).
+- A function to rollback a move has been implemented (this required saving a board "history").
+- The game ends when a condition for checkmate or draw (stalemante, threefold repetition, 50 moves rule, insufficient material) is met. The ending condition is returned.
 
 ### (Next) Phase 4 - Engine
 The next phase will consist in implementing a basic chess engine able to analyze a position and understanding which is the best move to do.
