@@ -46,14 +46,14 @@ impl PieceColor {
 }
 
 impl PieceType {
-    fn value(&self) -> i32 {
+    fn value(&self) -> usize {
         match self {
             PieceType::Pawn => 1,
             PieceType::Rook => 5,
             PieceType::Knight => 3,
             PieceType::Bishop => 3,
             PieceType::Queen => 9,
-            PieceType::King => i32::MAX,
+            PieceType::King => 0,
         }
     }
     pub fn id(&self) -> u8 {
@@ -106,8 +106,14 @@ impl Piece {
         }
     }
 
-    fn get_value(&self) -> i32 {
+    pub(crate) fn get_value(&self) -> usize {
         self.piece_type.value()
+    }
+    pub(crate) fn get_potential_value(&self) -> usize {
+        match self.piece_type {
+            PieceType::Pawn => PieceType::Queen.value(),
+            _ => self.get_value(),
+        }
     }
 
     pub(crate) fn get_png(&self) -> String {
