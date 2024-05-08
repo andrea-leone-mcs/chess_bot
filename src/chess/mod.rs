@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 mod board;
 mod piece;
 
@@ -45,6 +47,7 @@ struct HistoryData {
     en_passant: Option<(u8, u8)>,
     halfmove_clock: u16,
     fullmove_number: u16,
+    is_check: bool,
 }
 
 pub struct Board {
@@ -57,7 +60,9 @@ pub struct Board {
     en_passant: Option<(u8, u8)>,
     halfmove_clock: u16,
     fullmove_number: u16,
+    is_check: bool,
     history: Vec<HistoryData>,
+    board_config_counts: HashMap<String, u8>,
 }
 
 #[derive(Debug)]
@@ -72,4 +77,5 @@ pub enum DrawType {
 pub enum GameOutcome {
     Checkmate(PieceColor),
     Draw(DrawType),
+    DebugError(String),
 }
