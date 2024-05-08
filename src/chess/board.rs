@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use gtk::glib::object::Cast;
 use gtk::{gdk_pixbuf, Button, Grid, Picture};
 use gtk::prelude::{GridExt, ButtonExt};
@@ -17,6 +19,7 @@ impl HistoryData {
             en_passant: board.en_passant,
             halfmove_clock: board.halfmove_clock,
             fullmove_number: board.fullmove_number,
+            is_check: board.is_check,
         }
     }
 }
@@ -90,7 +93,7 @@ impl Board {
             Err(_) => return Err("from_fen: error getting fullmove number")
         };
 
-        Ok(Self {
+        let mut board = Self {
             board,
             turn,
             wq_castle,
@@ -100,34 +103,74 @@ impl Board {
             en_passant,
             halfmove_clock,
             fullmove_number,
+            is_check: false,
             history: Vec::new(),
-        })
+            board_config_counts: HashMap::new(),
+        };
+        board.is_check = !board.get_checking_pieces(&board.turn, true).is_empty();
+
+        Ok(board)
     }
 
-    pub(crate) fn is_attacked(&self, row: usize, col: usize, color: &PieceColor) -> bool {
+    fn to_fen_board(&self) -> String {
+        let mut res = String::new();
+        for row in 0..Board::ROWS {
+            let mut empty = 0;
+            for col in 0..Board::COLS {
+                if let Some(piece) = &self.board[row][col] {
+                    if empty > 0 {
+                        res.push_str(&empty.to_string());
+                        empty = 0;
+                    }
+                    res.push(piece.to_fen());
+                } else {
+                    empty += 1;
+                }
+            }
+            if empty > 0 {
+                res.push_str(&empty.to_string());
+            }
+            if row < Board::ROWS-1 {
+                res.push('/');
+            }
+        }
+        res
+    }
+
+    pub(crate) fn get_attacking_pieces(&self, row: usize, col: usize, color: &PieceColor, early_stop: bool) -> Vec<(u8, u8)> {
+        let mut res = Vec::new();
         let knight_moves = vec![(1, 2), (2, 1), (-1, 2), (-2, 1), (1, -2), (2, -1), (-1, -2), (-2, -1)];
+        
         for (dr, dc) in knight_moves {
             let r = (row as i8 + dr) as usize;
             let c = (col as i8 + dc) as usize;
             if r < 8 && c < 8 {
                 if let Some(piece) = &self.board[r][c] {
                     if piece.piece_type == PieceType::Knight && piece.color != *color {
-                        return true;
+                        res.push((r as u8, c as u8));
+                        if early_stop {
+                            return res;
+                        }
                     }
                 }
             }
         }
+
+        let king_mask = PieceType::King.id() | color.id();
         let directions = [(1, 0), (0, 1), (-1, 0), (0, -1)];
         for (dr, dc) in directions.iter() {
             let (mut r, mut c) = ((row as i8 + dr) as usize, (col as i8 + dc) as usize);
             let mut row_col_mask = PieceType::Queen.id() | PieceType::Rook.id() | PieceType::King.id() | color.opposite().id();
             while r < Board::ROWS && c < Board::COLS {
                 if let Some(piece) = &self.board[r][c] {
-                    /*if piece.color == *color {
-                        break;
-                    } else */if piece.matches(row_col_mask) {
-                        return true;
-                    } else {
+                    if piece.matches(row_col_mask) {
+                        res.push((r as u8, c as u8));
+                        if early_stop {
+                            return res;
+                        } else {
+                            break;
+                        }
+                    } else if !piece.matches(king_mask) {
                         break;
                     }
                 }
@@ -136,17 +179,21 @@ impl Board {
                 row_col_mask &= !PieceType::King.id();
             }
         }
+
         let directions = [(1, 1), (-1, -1), (1, -1), (-1, 1)];
         for (dr, dc) in directions.iter() {
             let (mut r, mut c) = ((row as i8 + dr) as usize, (col as i8 + dc) as usize);
             let mut diag_mask = PieceType::Queen.id() | PieceType::Bishop.id() | PieceType::King.id() | color.opposite().id();
             while r < Board::ROWS && c < Board::COLS {
                 if let Some(piece) = &self.board[r][c] {
-                    /*if piece.color == *color {
-                        break;
-                    } else */if piece.matches(diag_mask) {
-                        return true;
-                    } else {
+                    if piece.matches(diag_mask) {
+                        res.push((r as u8, c as u8));
+                        if early_stop {
+                            return res;
+                        } else {
+                            break;
+                        }
+                    } else if !piece.matches(king_mask) {
                         break;
                     }
                 }
@@ -155,6 +202,7 @@ impl Board {
                 diag_mask &= !PieceType::King.id();
             }
         }
+
         let directions = match color {
             PieceColor::White => [(-1, -1), (-1, 1)],
             PieceColor::Black => [(1, -1), (1, 1)],
@@ -165,12 +213,22 @@ impl Board {
             if r < 8 && c < 8 {
                 if let Some(piece) = &self.board[r][c] {
                     if piece.piece_type == PieceType::Pawn && piece.color != *color {
-                        return true;
+                        res.push((r as u8, c as u8));
+                        if early_stop {
+                            return res;
+                        }
                     }
                 }
             }
         }
-        false
+
+        if let Some(piece) = &self.board[row][col] {
+            let king_mask = PieceType::King.id() | color.id();
+            if piece.matches(king_mask) {
+                println!("King at {} {} attacked by {:?}", row, col, res);
+            }
+        }
+        res
     }
 
     pub(crate)fn row_pin(&self, row: usize, col: usize, mask1: u8, mask2: u8) -> bool {
@@ -396,7 +454,7 @@ impl Board {
         Ok((row, col))
     }
 
-    fn king_coords(&self, color: &PieceColor) -> (u8, u8) {
+    pub(crate) fn king_coords(&self, color: &PieceColor) -> (u8, u8) {
         for row in 0..Board::ROWS {
             for col in 0..Board::COLS {
                 if let Some(piece) = &self.board[row][col] {
@@ -409,35 +467,37 @@ impl Board {
         (9, 9)
     }
 
-    fn is_check(&self, color: &PieceColor) -> bool {
+    pub(crate) fn get_checking_pieces(&self, color: &PieceColor, early_stop: bool) -> Vec<(u8, u8)> {
         let king_position = self.king_coords(color);
-        self.is_attacked(king_position.0 as usize, king_position.1 as usize, color)        
+        self.get_attacking_pieces(king_position.0 as usize, king_position.1 as usize, color, early_stop)
     }
 
     pub fn play_random_move(&mut self) -> Option<GameOutcome> {
         let mut moves = Vec::new();
+        let checking_pieces = if self.is_check {self.get_checking_pieces(&self.turn, false)} else {Vec::new()};
         for row in 0..Board::ROWS {
             for col in 0..Board::COLS {
                 if let Some(piece) = &self.board[row][col] {
                     if piece.color == self.turn {
-                        let piece_moves = piece.generate_moves(self);
+                        let piece_moves = piece.generate_moves(self, &checking_pieces);
                         moves.extend(piece_moves.iter().map(|mv| (row, col, *mv)));
                     }
                 }
             }
         }
         println!("{} moves available", moves.len());
-        if self.is_check(&self.turn) {
-            println!("CHECK");
+        let threefold_repetition;
+        if self.is_check {
             loop {
                 if moves.len() == 0 {
                     return Some(GameOutcome::Checkmate(self.turn.opposite()));
                 }
                 let random_idx = rand::random::<usize>() % moves.len();
                 let (row, col, mv) = moves.swap_remove(random_idx);
-                self.play_move((row, col), &mv);
+                threefold_repetition = self.play_move((row, col), &mv);
 
-                if self.is_check(&self.turn.opposite()) {
+                if self.get_checking_pieces(&self.turn.opposite(), true).len() > 0 {
+                    return Some(GameOutcome::DebugError("Should not find checking pieces here".to_string()));
                     self.rollback_move();
                 } else {
                     break;
@@ -450,11 +510,16 @@ impl Board {
             let random_idx = rand::random::<usize>() % moves.len();
             let (row, col, mv) = moves.swap_remove(random_idx);
             
-            self.play_move((row, col), &mv);
+            threefold_repetition = self.play_move((row, col), &mv);
+            if self.is_check {
+                println!("CHECK");
+            }
         }
         println!("{}", self.halfmove_clock);
         let potential_value = self.material_count(true);
-        if potential_value.0 < 4 && potential_value.1 < 4 {
+        if threefold_repetition {
+            Some(GameOutcome::Draw(DrawType::ThreefoldRepetition))
+        } else if potential_value.0 < 4 && potential_value.1 < 4 {
             Some(GameOutcome::Draw(DrawType::InsufficientMaterial))
         } else if self.halfmove_clock == 100 {
             Some(GameOutcome::Draw(DrawType::FiftyMoveRule))
@@ -463,7 +528,7 @@ impl Board {
         }
     }
 
-    fn play_move(&mut self, from: (usize, usize), mv: &Move) {
+    fn play_move(&mut self, from: (usize, usize), mv: &Move) -> bool {
         self.history.push(HistoryData::new(self, (from.0 as u8, from.1 as u8), mv));
         let mut piece = self.board[from.0][from.1].take().unwrap();
         println!("{:?} {:?} {:?} from {:?} to {:?} capture={:?} promote={:?}", if mv.castling {"Castling"} else {"Moving"}, piece.color, piece.piece_type, Board::u8_coords_to_str((from.0 as u8, from.1 as u8)), Board::u8_coords_to_str(mv.to), mv.capture, mv.promotion);
@@ -520,9 +585,17 @@ impl Board {
             self.fullmove_number += 1;
         }
         self.turn = self.turn.opposite();
+        self.is_check = !self.get_checking_pieces(&self.turn, true).is_empty();
+
+        let fen_board = self.to_fen_board();
+        let cnt = *self.board_config_counts.entry(fen_board).and_modify(|v| *v += 1).or_insert(1);
+        println!("Occured {} times.", cnt);
+        return cnt == 3;
     }
 
     fn rollback_move(&mut self) {
+        let fen_board = self.to_fen_board();
+        self.board_config_counts.entry(fen_board).and_modify(|v| *v -= 1);
         self.turn = self.turn.opposite();
         let history_data = self.history.pop().unwrap();
         let (row, col) = (history_data.starting_row, history_data.starting_col);
@@ -566,6 +639,7 @@ impl Board {
         self.en_passant = history_data.en_passant;
         self.halfmove_clock = history_data.halfmove_clock;
         self.fullmove_number = history_data.fullmove_number;
+        self.is_check = history_data.is_check;
     }
 
     fn u8_coords_to_str(coords: (u8, u8)) -> String {
