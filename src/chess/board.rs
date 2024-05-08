@@ -2,7 +2,24 @@ use gtk::glib::object::Cast;
 use gtk::{gdk_pixbuf, Button, Grid, Picture};
 use gtk::prelude::{GridExt, ButtonExt};
 
-use crate::chess::{Board, PieceColor, Piece, Move, PieceType};
+use crate::chess::{HistoryData, Board, PieceColor, Piece, Move, PieceType, GameOutcome, DrawType};
+
+impl HistoryData {
+    fn new(board: &Board, from: (u8, u8), mv: &Move) -> Self {
+        Self {
+            starting_row: from.0,
+            starting_col: from.1,
+            mv: mv.clone(),
+            wq_castle: board.wq_castle,
+            wk_castle: board.wk_castle,
+            bq_castle: board.bq_castle,
+            bk_castle: board.bk_castle,
+            en_passant: board.en_passant,
+            halfmove_clock: board.halfmove_clock,
+            fullmove_number: board.fullmove_number,
+        }
+    }
+}
 
 impl Board {
     pub const ROWS: usize = 8;
@@ -83,7 +100,7 @@ impl Board {
             en_passant,
             halfmove_clock,
             fullmove_number,
-            moves: Vec::new(),
+            history: Vec::new(),
         })
     }
 
@@ -264,6 +281,22 @@ impl Board {
         found1 && found2
     }
 
+    fn material_count(&self, potential: bool) -> (usize, usize) {
+        let mut white = 0;
+        let mut black = 0;
+        for row in 0..Board::ROWS {
+            for col in 0..Board::COLS {
+                if let Some(piece) = &self.board[row][col] {
+                    match piece.color {
+                        PieceColor::White => white += if potential {piece.get_potential_value()} else {piece.get_value()},
+                        PieceColor::Black => black += if potential {piece.get_potential_value()} else {piece.get_value()},
+                    }
+                }
+            }
+        }
+        (white, black)
+    }
+
     // fn same_row(&self, row: usize, mask1: u8, mask2: u8) -> bool {
     //     let (mut found1, mut found2) = (false, false);
     //     for col in 0..Board::COLS {
@@ -381,19 +414,14 @@ impl Board {
         self.is_attacked(king_position.0 as usize, king_position.1 as usize, color)        
     }
 
-    pub fn play_random_move(&mut self) {
+    pub fn play_random_move(&mut self) -> Option<GameOutcome> {
         let mut moves = Vec::new();
         for row in 0..Board::ROWS {
             for col in 0..Board::COLS {
                 if let Some(piece) = &self.board[row][col] {
                     if piece.color == self.turn {
                         let piece_moves = piece.generate_moves(self);
-                        for mv in piece_moves {
-                            if mv.castling {
-                                return self.play_move((row, col), &mv);
-                            }
-                            moves.push((row, col, mv));
-                        }
+                        moves.extend(piece_moves.iter().map(|mv| (row, col, *mv)));
                     }
                 }
             }
@@ -401,32 +429,42 @@ impl Board {
         println!("{} moves available", moves.len());
         if self.is_check(&self.turn) {
             println!("CHECK");
-            while self.is_check(&self.turn) {
+            loop {
                 if moves.len() == 0 {
-                    panic!("CHECKMATE");
+                    return Some(GameOutcome::Checkmate(self.turn.opposite()));
                 }
                 let random_idx = rand::random::<usize>() % moves.len();
                 let (row, col, mv) = moves.swap_remove(random_idx);
-                
                 self.play_move((row, col), &mv);
+
                 if self.is_check(&self.turn.opposite()) {
                     self.rollback_move();
+                } else {
+                    break;
                 }
             }
         } else {
             if moves.len() == 0 {
-                panic!("STALEMATE");
+                return Some(GameOutcome::Draw(DrawType::Stalemate));
             }
             let random_idx = rand::random::<usize>() % moves.len();
             let (row, col, mv) = moves.swap_remove(random_idx);
             
             self.play_move((row, col), &mv);
         }
+        println!("{}", self.halfmove_clock);
+        let potential_value = self.material_count(true);
+        if potential_value.0 < 4 && potential_value.1 < 4 {
+            Some(GameOutcome::Draw(DrawType::InsufficientMaterial))
+        } else if self.halfmove_clock == 100 {
+            Some(GameOutcome::Draw(DrawType::FiftyMoveRule))
+        } else {
+            None
+        }
     }
 
     fn play_move(&mut self, from: (usize, usize), mv: &Move) {
-        self.moves.push((from.0 as u8, from.1 as u8, mv.clone()));
-
+        self.history.push(HistoryData::new(self, (from.0 as u8, from.1 as u8), mv));
         let mut piece = self.board[from.0][from.1].take().unwrap();
         println!("{:?} {:?} {:?} from {:?} to {:?} capture={:?} promote={:?}", if mv.castling {"Castling"} else {"Moving"}, piece.color, piece.piece_type, Board::u8_coords_to_str((from.0 as u8, from.1 as u8)), Board::u8_coords_to_str(mv.to), mv.capture, mv.promotion);
         
@@ -473,7 +511,11 @@ impl Board {
             None => Some(piece),
         };
         
-        self.halfmove_clock += 1;
+        if piece.piece_type == PieceType::Pawn || mv.promotion.is_some() || mv.capture.is_some(){
+            self.halfmove_clock = 0;
+        } else {
+            self.halfmove_clock += 1;
+        }
         if self.turn == PieceColor::Black {
             self.fullmove_number += 1;
         }
@@ -482,7 +524,12 @@ impl Board {
 
     fn rollback_move(&mut self) {
         self.turn = self.turn.opposite();
-        let (row, col, mv) = self.moves.pop().unwrap();
+        let history_data = self.history.pop().unwrap();
+        let (row, col) = (history_data.starting_row, history_data.starting_col);
+        let mv = &history_data.mv;
+        
+        println!("Rollback");
+
         if mv.castling {
             let (r_rook, c_rook) = mv.rook_to.unwrap();
             let mut rook = self.board[r_rook as usize][c_rook as usize].take().unwrap();
@@ -512,10 +559,13 @@ impl Board {
         piece.move_piece(&Move::new((row, col), None, None));
         self.board[row as usize][col as usize] = Some(piece);
 
-        self.halfmove_clock -= 1;
-        if self.turn == PieceColor::Black {
-            self.fullmove_number -= 1;
-        }
+        self.wq_castle = history_data.wq_castle;
+        self.wk_castle = history_data.wk_castle;
+        self.bq_castle = history_data.bq_castle;
+        self.bk_castle = history_data.bk_castle;
+        self.en_passant = history_data.en_passant;
+        self.halfmove_clock = history_data.halfmove_clock;
+        self.fullmove_number = history_data.fullmove_number;
     }
 
     fn u8_coords_to_str(coords: (u8, u8)) -> String {
