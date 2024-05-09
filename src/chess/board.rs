@@ -106,8 +106,12 @@ impl Board {
             is_check: false,
             history: Vec::new(),
             board_config_counts: HashMap::new(),
+            white_king_pos: (9, 9),
+            black_king_pos: (9, 9),
         };
         board.is_check = !board.get_checking_pieces(&board.turn, true).is_empty();
+        board.white_king_pos = board.king_coords(&PieceColor::White);
+        board.black_king_pos = board.king_coords(&PieceColor::Black);
 
         Ok(board)
     }
@@ -219,13 +223,6 @@ impl Board {
                         }
                     }
                 }
-            }
-        }
-
-        if let Some(piece) = &self.board[row][col] {
-            let king_mask = PieceType::King.id() | color.id();
-            if piece.matches(king_mask) {
-                println!("King at {} {} attacked by {:?}", row, col, res);
             }
         }
         res
@@ -468,7 +465,10 @@ impl Board {
     }
 
     pub(crate) fn get_checking_pieces(&self, color: &PieceColor, early_stop: bool) -> Vec<(u8, u8)> {
-        let king_position = self.king_coords(color);
+        let king_position = match color {
+            PieceColor::White => self.white_king_pos,
+            PieceColor::Black => self.black_king_pos,
+        };
         self.get_attacking_pieces(king_position.0 as usize, king_position.1 as usize, color, early_stop)
     }
 
@@ -515,7 +515,7 @@ impl Board {
                 println!("CHECK");
             }
         }
-        println!("{}", self.halfmove_clock);
+        
         let potential_value = self.material_count(true);
         if threefold_repetition {
             Some(GameOutcome::Draw(DrawType::ThreefoldRepetition))
@@ -531,12 +531,17 @@ impl Board {
     fn play_move(&mut self, from: (usize, usize), mv: &Move) -> bool {
         self.history.push(HistoryData::new(self, (from.0 as u8, from.1 as u8), mv));
         let mut piece = self.board[from.0][from.1].take().unwrap();
-        println!("{:?} {:?} {:?} from {:?} to {:?} capture={:?} promote={:?}", if mv.castling {"Castling"} else {"Moving"}, piece.color, piece.piece_type, Board::u8_coords_to_str((from.0 as u8, from.1 as u8)), Board::u8_coords_to_str(mv.to), mv.capture, mv.promotion);
+        println!("{} {:?} {:?} from {} to {} capture={:?} promote={:?}", if mv.castling {"Castling"} else {"Moving"}, piece.color, piece.piece_type, Board::u8_coords_to_str((from.0 as u8, from.1 as u8)), Board::u8_coords_to_str(mv.to), mv.capture, mv.promotion);
         
         if mv.castling {
             let mut rook = self.board[piece.row as usize][if mv.rook_to.unwrap().1 == 5 {7} else {0}].take().unwrap();
             rook.move_piece(mv);
             self.board[mv.rook_to.unwrap().0 as usize][mv.rook_to.unwrap().1 as usize] = Some(rook);
+        }
+        if let Some(capture) = mv.capture {
+            if piece.piece_type == PieceType::Pawn && (capture.row, capture.col) == self.en_passant.unwrap_or((9, 9)) {
+                self.board[capture.row as usize][capture.col as usize] = None;
+            }
         }
         
 
@@ -575,6 +580,13 @@ impl Board {
             Some(piece_type) => Some(Piece::new(piece_type, piece.color, mv.to.0, mv.to.1)),
             None => Some(piece),
         };
+        if piece.piece_type == PieceType::King {
+            match piece.color {
+                PieceColor::White => self.white_king_pos = mv.to,
+                PieceColor::Black => self.black_king_pos = mv.to,
+            };
+        }
+
         
         if piece.piece_type == PieceType::Pawn || mv.promotion.is_some() || mv.capture.is_some(){
             self.halfmove_clock = 0;
@@ -589,7 +601,6 @@ impl Board {
 
         let fen_board = self.to_fen_board();
         let cnt = *self.board_config_counts.entry(fen_board).and_modify(|v| *v += 1).or_insert(1);
-        println!("Occured {} times.", cnt);
         return cnt == 3;
     }
 
@@ -622,8 +633,8 @@ impl Board {
             }
         }
         let mut piece = self.board[mv.to.0 as usize][mv.to.1 as usize].take().unwrap();
-        if mv.capture.is_some() {
-            self.board[mv.to.0 as usize][mv.to.1 as usize] = mv.capture;
+        if let Some(capture) = mv.capture {
+            self.board[capture.row as usize][capture.col as usize] = mv.capture;
         }
         
         if mv.promotion.is_some() {
@@ -631,6 +642,12 @@ impl Board {
         }
         piece.move_piece(&Move::new((row, col), None, None));
         self.board[row as usize][col as usize] = Some(piece);
+        if piece.piece_type == PieceType::King {
+            match piece.color {
+                PieceColor::White => self.white_king_pos = (row, col),
+                PieceColor::Black => self.black_king_pos = (row, col),
+            };
+        }
 
         self.wq_castle = history_data.wq_castle;
         self.wk_castle = history_data.wk_castle;

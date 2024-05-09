@@ -184,7 +184,10 @@ impl Piece {
 
     pub(crate) fn generate_moves(&self, board: &Board, checking_pieces: &Vec<(u8, u8)>) -> Vec<Move> {
         let mut result = Vec::new();
-        let king_position = board.king_coords(&self.color);
+        let king_position = match self.color {
+            PieceColor::White => board.white_king_pos,
+            PieceColor::Black => board.black_king_pos,
+        };
         if checking_pieces.len() > 1 && self.piece_type != PieceType::King {
             return result;
         }
@@ -252,8 +255,10 @@ impl Piece {
                                             result.push(Move::new((r as u8, c as u8), board.board[r][c], None));
                                         }
                                     }
-                                } else if (r as u8, c as u8) == board.en_passant.unwrap_or((9, 9)) {
-                                    result.push(Move::new((r as u8, c as u8), board.board[r][c], None));
+                                } else if let Some(en_passant) = board.en_passant {
+                                    if en_passant == (r as u8, c as u8) {
+                                        result.push(Move::new((r as u8, c as u8), board.board[en_passant.0 as usize][en_passant.1 as usize], None));
+                                    }
                                 }
                             }
                         }
