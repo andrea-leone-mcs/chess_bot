@@ -45,7 +45,7 @@ struct HistoryData {
     bq_castle: bool,
     bk_castle: bool,
     en_passant: Option<(u8, u8)>,
-    halfmove_clock: u16,
+    halfmove_clock: u8,
     fullmove_number: u16,
     is_check: bool,
 }
@@ -58,7 +58,7 @@ pub struct Board {
     bq_castle: bool,
     bk_castle: bool,
     en_passant: Option<(u8, u8)>,
-    halfmove_clock: u16,
+    halfmove_clock: u8,
     fullmove_number: u16,
     is_check: bool,
     history: Vec<HistoryData>,
@@ -66,6 +66,7 @@ pub struct Board {
 
     white_king_pos: (u8, u8),
     black_king_pos: (u8, u8),
+    prefetched_moves: Option<Vec<(u8, u8, Move)>>,
 }
 
 #[derive(Debug)]

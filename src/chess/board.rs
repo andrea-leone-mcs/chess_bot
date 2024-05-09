@@ -83,7 +83,7 @@ impl Board {
             }
         };
 
-        let halfmove_clock: u16 = match parts[4].parse::<u16>() {
+        let halfmove_clock: u8 = match parts[4].parse::<u8>() {
             Ok(v) => v,
             Err(_) => return Err("from_fen: error getting halfmove clock")
         };
@@ -108,12 +108,30 @@ impl Board {
             board_config_counts: HashMap::new(),
             white_king_pos: (9, 9),
             black_king_pos: (9, 9),
+            prefetched_moves: None,
         };
         board.is_check = !board.get_checking_pieces(&board.turn, true).is_empty();
         board.white_king_pos = board.king_coords(&PieceColor::White);
         board.black_king_pos = board.king_coords(&PieceColor::Black);
+        board.prefetched_moves = Some(board.get_all_possible_moves());
 
         Ok(board)
+    }
+
+    fn get_all_possible_moves(&self) -> Vec<(u8, u8, Move)> {
+        let mut moves = Vec::new();
+        let checking_pieces = if self.is_check {self.get_checking_pieces(&self.turn, false)} else {Vec::new()};
+        for row in 0..Board::ROWS {
+            for col in 0..Board::COLS {
+                if let Some(piece) = &self.board[row][col] {
+                    if piece.color == self.turn {
+                        let piece_moves = piece.generate_moves(self, &checking_pieces);
+                        moves.extend(piece_moves.iter().map(|mv| (row as u8, col as u8, *mv)));
+                    }
+                }
+            }
+        }
+        moves
     }
 
     fn to_fen_board(&self) -> String {
@@ -473,24 +491,16 @@ impl Board {
     }
 
     pub fn play_random_move(&mut self) -> Option<GameOutcome> {
-        let mut moves = Vec::new();
-        let checking_pieces = if self.is_check {self.get_checking_pieces(&self.turn, false)} else {Vec::new()};
-        for row in 0..Board::ROWS {
-            for col in 0..Board::COLS {
-                if let Some(piece) = &self.board[row][col] {
-                    if piece.color == self.turn {
-                        let piece_moves = piece.generate_moves(self, &checking_pieces);
-                        moves.extend(piece_moves.iter().map(|mv| (row, col, *mv)));
-                    }
-                }
-            }
-        }
+        let mut moves = match self.prefetched_moves.take() {
+            Some(moves) => moves,
+            None => self.get_all_possible_moves(),
+        };
         println!("{} moves available", moves.len());
         let threefold_repetition;
         if self.is_check {
             loop {
                 if moves.len() == 0 {
-                    return Some(GameOutcome::Checkmate(self.turn.opposite()));
+                    return Some(GameOutcome::DebugError("Checkmate, but should not find it here!".to_string()));
                 }
                 let random_idx = rand::random::<usize>() % moves.len();
                 let (row, col, mv) = moves.swap_remove(random_idx);
@@ -504,9 +514,6 @@ impl Board {
                 }
             }
         } else {
-            if moves.len() == 0 {
-                return Some(GameOutcome::Draw(DrawType::Stalemate));
-            }
             let random_idx = rand::random::<usize>() % moves.len();
             let (row, col, mv) = moves.swap_remove(random_idx);
             
@@ -515,22 +522,31 @@ impl Board {
                 println!("CHECK");
             }
         }
-        
-        let potential_value = self.material_count(true);
-        if threefold_repetition {
-            Some(GameOutcome::Draw(DrawType::ThreefoldRepetition))
-        } else if potential_value.0 < 4 && potential_value.1 < 4 {
-            Some(GameOutcome::Draw(DrawType::InsufficientMaterial))
-        } else if self.halfmove_clock == 100 {
-            Some(GameOutcome::Draw(DrawType::FiftyMoveRule))
+        let next_moves = self.get_all_possible_moves();
+        if next_moves.is_empty() {
+            if self.is_check {
+                Some(GameOutcome::Checkmate(self.turn))
+            } else {
+                Some(GameOutcome::Draw(DrawType::Stalemate))
+            }
         } else {
-            None
+            self.prefetched_moves = Some(next_moves);
+            let potential_value = self.material_count(true);
+            if threefold_repetition {
+                Some(GameOutcome::Draw(DrawType::ThreefoldRepetition))
+            } else if potential_value.0 < 4 && potential_value.1 < 4 {
+                Some(GameOutcome::Draw(DrawType::InsufficientMaterial))
+            } else if self.halfmove_clock == 100 {
+                Some(GameOutcome::Draw(DrawType::FiftyMoveRule))
+            } else {
+                None
+            }
         }
     }
 
-    fn play_move(&mut self, from: (usize, usize), mv: &Move) -> bool {
-        self.history.push(HistoryData::new(self, (from.0 as u8, from.1 as u8), mv));
-        let mut piece = self.board[from.0][from.1].take().unwrap();
+    fn play_move(&mut self, from: (u8, u8), mv: &Move) -> bool {
+        self.history.push(HistoryData::new(self, (from.0, from.1), mv));
+        let mut piece = self.board[from.0 as usize][from.1 as usize].take().unwrap();
         println!("{} {:?} {:?} from {} to {} capture={:?} promote={:?}", if mv.castling {"Castling"} else {"Moving"}, piece.color, piece.piece_type, Board::u8_coords_to_str((from.0 as u8, from.1 as u8)), Board::u8_coords_to_str(mv.to), mv.capture, mv.promotion);
         
         if mv.castling {
