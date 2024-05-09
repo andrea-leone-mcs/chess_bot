@@ -63,6 +63,9 @@ pub struct Board {
     is_check: bool,
     history: Vec<HistoryData>,
     board_config_counts: HashMap<String, u8>,
+
+    white_king_pos: (u8, u8),
+    black_king_pos: (u8, u8),
 }
 
 #[derive(Debug)]
